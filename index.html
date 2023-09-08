@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate Plots PDF</title>
+    <style>
+        body {
+            background-image: url("https://cdn3.vectorstock.com/i/1000x1000/63/47/black-background-with-leaves-on-the-left-side-vector-21366347.jpg");
+            background-size: cover;
+        }
+        .container {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            height: 100vh;
+        }
+        .form-container {
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .form-container h1 {
+            text-align: center;
+        }
+        .form-container label {
+            display: block;
+            margin-bottom: 10px;
+        }
+        .form-container input[type="date"],
+        .form-container input[type="submit"] {
+            padding: 10px;
+            border-radius: 3px;
+            border: none;
+        }
+        .form-container input[type="submit"] {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="form-container">
+            <h1>Generate Plots PDF</h1>
+            <form action="/generate_pdf" method="post">
+                <label for="start_date">Start Date:</label>
+                <input type="date" id="start_date" name="start_date" required><br><br>
+                <label for="end_date">End Date:</label>
+                <input type="date" id="end_date" name="end_date" required><br><br>
+                <input type="submit" value="Generate PDF">
+            </form>
+        </div>
+    </div>
+</body>
+</html>
