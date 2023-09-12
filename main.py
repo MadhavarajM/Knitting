@@ -210,7 +210,7 @@ def generate_plots_pdf(start_date, end_date):
             table_data = roll_details_df.values.tolist()
 
             # Create the table with the formatted data
-            ax5.table(cellText=table_data, colLabels=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No', 'Defect Count'], loc='center', bbox=[0.03, 0.3, 0.9, 0.5], fontsize=25)
+            ax5.table(cellText=table_data, colLabels=['Roll Number', 'Roll Start Date', 'Roll End Time', 'Order No', 'Defect Count'], loc='center', bbox=[0.03, 0.3, 0.9, 0.5], fontsize=25)
             pdf_pages.savefig(fig)
             plt.close(fig)
 
