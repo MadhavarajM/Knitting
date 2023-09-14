@@ -165,6 +165,49 @@ def generate_stacked_bar_graph_with_percentages(pdf_pages , selected_date, milln
     pdf_pages.savefig(fig)
     plt.close(fig)
 
+    data = {
+    'Defect Type': [],
+    'TP': [],
+    'FP': [],
+    'GT': []
+}
+    for defect, counts in label_counts.items():
+        data['Defect Type'].append(defect)
+        data['TP'].append(counts['tp'])
+        data['FP'].append(counts['fp'])
+        data['GT'].append(counts['gt'])
+    df = pd.DataFrame(data)
+    totals = pd.DataFrame({
+        'Defect Type': ['Total'],
+        'TP': [df['TP'].sum()],
+        'FP': [df['FP'].sum()],
+        'GT': [df['GT'].sum()]
+    })
+    # Concatenate the original DataFrame with the totals DataFrame
+    df = pd.concat([df, totals], ignore_index=True)
+    total_tp = df.at[df.index[-1], 'TP']
+    total_fp = df.at[df.index[-1], 'FP'] 
+    # Calculate the success rate
+    success_rate = (total_tp / (total_tp + total_fp)) * 100
+    failure_rate = (total_fp / (total_tp + total_fp)) * 100
+    fig, ax = plt.subplots(figsize=(25, 15))
+    # Hide axes
+    ax.axis('off')
+    # Create the table
+    table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center', colColours=['#f3f3f3']*4)
+    # Style the table
+    table.auto_set_font_size(False)
+    table.set_fontsize(14)
+    table.scale(1.2, 2)
+    table_title = "Defect Type Statistics"
+    success_text = f"Success Rate for {selected_date} : {success_rate:.2f}%"
+    failure_text = f"Failure Rate for {selected_date} : {failure_rate:.2f}%"
+    ax.text(0.5, 0.33, success_text, fontsize=24, transform=fig.transFigure, ha='center')
+    ax.text(0.5, 0.27, failure_text, fontsize=24, transform=fig.transFigure, ha='center')
+    ax.text(0.52, 0.63, table_title, fontsize=35, transform=fig.transFigure, ha='center')
+    pdf_pages.savefig(fig)
+    plt.close(fig)
+
     for rollid in unique_rollids:
         cursor.execute("""
         SELECT original, modified, folder 
