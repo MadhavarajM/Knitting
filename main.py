@@ -10,6 +10,10 @@ import pandas as pd
 from collections import Counter
 import matplotlib.dates as mdates
 import matplotlib.image as mpimg
+import locale
+
+locale.setlocale(locale.LC_TIME, 'C')
+encoding = 'utf-8'
 def round_to_nearest_multiple_of_3(x):
     rounded_value = int(3 * round(float(x) / 3))
     if rounded_value <= 30:
@@ -18,7 +22,7 @@ def round_to_nearest_multiple_of_3(x):
         return 30
 def generate_plots_pdf(start_date, end_date):
     # Connect to the database
-    conn = psycopg2.connect(host="localhost", database="knitting", user="postgres", password="55555")
+    conn = psycopg2.connect(host="localhost", database="new8", user="postgres", password="manager")
     cursor = conn.cursor()
     # Convert the date strings to datetime objects
     start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
@@ -155,7 +159,7 @@ def generate_plots_pdf(start_date, end_date):
 
             roll_details_df = pd.DataFrame(roll_details_cellText, columns=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No'])
             #print(roll_details_df['Roll Start Time'])
-            roll_details_df['Roll Start Time'] = pd.to_datetime(roll_details_df['Roll Start Time'], errors='coerce')
+            roll_details_df['Roll Start Time'] = pd.to_datetime(roll_details_df['Roll Start Time'], format="%H:%M:%S.%f",errors='coerce',exact=False,infer_datetime_format=True)
             roll_details_df['Roll Start Time'] = roll_details_df['Roll Start Time'].dt.strftime('%H:%M:%S')
             roll_details_df = roll_details_df.dropna(subset=['Roll Start Time'])
             #print(roll_details_df)
