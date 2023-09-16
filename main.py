@@ -137,58 +137,88 @@ def generate_plots_pdf(start_date, end_date):
             
 
             query = '''
-    SELECT
-        roll_number,
-        DATE(timestamp) AS roll_start_date,
-        EXTRACT(HOUR FROM timestamp)||':'||EXTRACT(MINUTE FROM timestamp)||':'||EXTRACT(SECOND FROM timestamp) AS roll_start_time,
-        order_no
+     WITH LastEntry AS (
+    SELECT MAX(timestamp) AS last_entry_timestamp
     FROM roll_details
-    WHERE DATE_TRUNC('day', timestamp) = %s::date
-    ORDER BY timestamp DESC;
+    WHERE DATE(timestamp) = %s::date - interval '1 day'
+)
+
+SELECT
+    roll_number,
+    DATE(timestamp) AS roll_start_date,
+    EXTRACT(HOUR FROM timestamp) || ':' || EXTRACT(MINUTE FROM timestamp) || ':' || EXTRACT(SECOND FROM timestamp) AS roll_start_time,
+    order_no
+FROM roll_details
+WHERE DATE(timestamp) = %s::date OR timestamp = (SELECT last_entry_timestamp FROM LastEntry)
+ORDER BY timestamp ASC;
 '''
 
-            cursor.execute(query, (current_date,))
+            cursor.execute(query, (current_date, current_date))
             data = cursor.fetchall()
-            #print(data)
 
             roll_details_cellText = [
                 [str(row[0]), str(row[1]), row[2], 'null' if row[3] is None else str(row[3])]
                 for row in data
             ]
-            
 
             roll_details_df = pd.DataFrame(roll_details_cellText, columns=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No'])
-            #print(roll_details_df['Roll Start Time'])
-            roll_details_df['Roll Start Time'] = pd.to_datetime(roll_details_df['Roll Start Time'], format="%H:%M:%S.%f",errors='coerce',exact=False,infer_datetime_format=True)
+
+            # Calculate Roll End Time based on the next row's Roll Start Time
+            roll_details_df['Roll End Time'] = roll_details_df['Roll Start Time'].shift(-1)
+
+            # Set the "Roll End Time" to the end of the day for the last row
+            last_row_index = len(roll_details_df) - 1
+            if last_row_index >= 0:
+                roll_details_df.at[last_row_index, 'Roll End Time'] = '23:59:59'  # Set to the end of the day
+
+            # Drop the last row as it doesn't have a corresponding next row
+            roll_details_df = roll_details_df.dropna(subset=['Roll Start Time', 'Roll End Time'])
+
+            # Convert 'Roll Start Time' and 'Roll End Time' columns to datetime objects
+            roll_details_df['Roll Start Time'] = pd.to_datetime(roll_details_df['Roll Start Time'], format="%H:%M:%S.%f", errors='coerce', exact=False, infer_datetime_format=True)
+            roll_details_df['Roll End Time'] = pd.to_datetime(roll_details_df['Roll End Time'], format="%H:%M:%S.%f", errors='coerce', exact=False, infer_datetime_format=True)
+
+            # Format 'Roll Start Time' and 'Roll End Time' columns as strings
             roll_details_df['Roll Start Time'] = roll_details_df['Roll Start Time'].dt.strftime('%H:%M:%S')
-            roll_details_df = roll_details_df.dropna(subset=['Roll Start Time'])
-            #print(roll_details_df)
-            roll_details_df = roll_details_df.sort_values(by='Roll Start Time', ascending=True)
-            roll_details_df = roll_details_df.reset_index(drop=True)
-            #print(roll_details_df)
+            roll_details_df['Roll End Time'] = roll_details_df['Roll End Time'].dt.strftime('%H:%M:%S')
             defect_counts = []
+
+            # Start with the beginning of the day for the first row
+            start_time = '00:00:00'
+
             for index, row in roll_details_df.iterrows():
-                #print("hi")
-                roll_start_time = pd.Timestamp(row['Roll Start Time'])  
-                # Access the "Roll Start Time" of the next row
-                next_row_index = index + 1
-                if next_row_index < len(roll_details_df):
-                    Roll_End_Time = pd.Timestamp(roll_details_df.at[next_row_index, 'Roll Start Time'])
+                roll_start_time = pd.Timestamp(row['Roll Start Time'])
+                
+                # Determine the end_time for the current roll entry
+                if index < len(roll_details_df) - 1:
+                    Roll_End_Time = pd.Timestamp(roll_details_df.at[index + 1, 'Roll Start Time'])
                 else:
-                    Roll_End_Time = roll_start_time + pd.DateOffset(days=1)
-                defect_count = {}  # Use a dictionary to store defect counts
+                    # For the last row, end with the end of the day
+                    Roll_End_Time = roll_start_time.replace(hour=23, minute=59, second=59)
+                
+                end_time = Roll_End_Time.strftime('%H:%M:%S')
+                
+                defect_count = {}  # Use a dictionary to store defect counts for this roll
+                
                 for defect_type in defect_log_df['defect_type']:
                     defect_count[defect_type] = 0  # Initialize counts for all defect types
-                for j in range(i + 1, len(defect_log_df)):
-                    log_time = pd.Timestamp(defect_log_df.at[j, 'time'])   
+                
+                for j in range(0, len(defect_log_df)):  # Iterate through defect log entries
+                    log_time = pd.Timestamp(defect_log_df.at[j, 'time'])
+                    time = log_time.strftime('%H:%M:%S')
+                    
                     # If log_time is within the time range, increment the corresponding defect count
-                    if roll_start_time <= log_time <= Roll_End_Time:
+                    if start_time <= time <= end_time:
                         defect_type = defect_log_df.at[j, 'defect_type']
                         defect_count[defect_type] += 1
+                
                 defect_counts.append(defect_count)
+                
+                # Set the start_time for the next roll to be the end_time of the current roll
+                start_time = end_time
+
             # Add defect_counts as a new column to roll_details_df
             roll_details_df['Defect Counts'] = defect_counts
-           
             
             fig, ax5 = plt.subplots(figsize=(21, 10))
             ax_logo = fig.add_subplot(1, 1, 1)
@@ -214,7 +244,7 @@ def generate_plots_pdf(start_date, end_date):
             table_data = roll_details_df.values.tolist()
 
             # Create the table with the formatted data
-            ax5.table(cellText=table_data, colLabels=['Roll Number', 'Roll Start Date', 'Roll End Time', 'Order No', 'Defect Count'], loc='center', bbox=[0.03, 0.3, 0.9, 0.5], fontsize=25)
+            ax5.table(cellText=table_data, colLabels=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No', 'Roll End Time', 'Defect Count'], loc='center', bbox=[0.03, 0.3, 0.9, 0.5], fontsize=25)
             pdf_pages.savefig(fig)
             plt.close(fig)
 
