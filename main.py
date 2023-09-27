@@ -22,7 +22,7 @@ def round_to_nearest_multiple_of_3(x):
         return 30
 def generate_plots_pdf(start_date, end_date):
     # Connect to the database
-    conn = psycopg2.connect(host="localhost", database="new8", user="postgres", password="manager")
+    conn = psycopg2.connect(host="localhost", database="new9", user="postgres", password="manager")
     cursor = conn.cursor()
     # Convert the date strings to datetime objects
     start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
@@ -55,7 +55,7 @@ def generate_plots_pdf(start_date, end_date):
         else:
             fig, (ax1, ax2 , ax3) = plt.subplots(3, 1, figsize=(21, 29.7))
             plt.subplots_adjust(hspace=0.8)
-            logo_path = 'env/logo.jpeg'
+            logo_path = 'env\logo.jpeg'
             logo_img = mpimg.imread(logo_path)
             ax_logo = fig.add_subplot(1, 1, 1)
             # Adjust the logo's position (move it up or down)
@@ -77,13 +77,17 @@ def generate_plots_pdf(start_date, end_date):
             ORDER BY date, hour;
         ''', (current_date, current_date))
             data1 = cursor.fetchall()
-            #print(data1)
-            # Extract the data from the query results
             dates1 = [row[0] for row in data1]
             hours1 = [row[1] for row in data1]
             rotation_counts1 = [row[2] for row in data1]
-            # Plot the first query
-            # Plot the first query as a bar graph
+            daily_rotation_counts = {}  
+            for date, count in zip(dates1, rotation_counts1):
+                if date not in daily_rotation_counts:
+                    daily_rotation_counts[date] = count
+                else:
+                    daily_rotation_counts[date] += count
+            for date, total_count in daily_rotation_counts.items():
+                print(f"Date: {date}, Total Rotation Count: {total_count}")
             ax1.bar(hours1, rotation_counts1, label='Rotation Count', color='red')
             ax1.set_xlabel('Time of the Day(HOUR)',fontsize=18)
             ax1.set_ylabel('Rotation Count',fontsize=18)
@@ -92,7 +96,7 @@ def generate_plots_pdf(start_date, end_date):
             ax1.legend()
             text_x = 0.85
             text_y = max(rotation_counts1) + 600  # Adjust the y-coordinate as needed
-            ax1.text(text_x, text_y, f"Date: {current_date}", fontsize=28, color='black')
+            ax1.text(text_x, text_y, f"SCM MACHINE3 ProductionReport for Date: {current_date}", fontsize=24, color='black')
             for i, count in enumerate(rotation_counts1):
                 ax1.annotate(str(count), xy=(hours1[i], count), xytext=(hours1[i], count + 10),
                     ha='center', va='bottom', fontsize=15, color='black' )
@@ -108,8 +112,6 @@ def generate_plots_pdf(start_date, end_date):
             for sno, row in enumerate(defect_log_df.iterrows(), start=1):
                 defect_log_table_data.append([sno, row[1]['time'], row[1]['defect_type']])
             
-            
-
             hour_counts = Counter(item[1].split(':')[0] for item in defect_log_table_data)
             hours = [str(i).zfill(2) for i in range(24)]  # Generate a list of all 24 hours as strings
             counts = [hour_counts[hour] for hour in hours]
@@ -137,31 +139,34 @@ def generate_plots_pdf(start_date, end_date):
             
 
             query = '''
-     WITH LastEntry AS (
-    SELECT MAX(timestamp) AS last_entry_timestamp
+    WITH LastEntry AS (
+        SELECT MAX(timestamp) AS last_entry_timestamp
+        FROM roll_details
+        WHERE DATE(timestamp) = %s::date - interval '1 day'
+    )
+    
+    SELECT
+        roll_number,
+        DATE(timestamp) AS roll_start_date,
+        EXTRACT(HOUR FROM timestamp) || ':' || EXTRACT(MINUTE FROM timestamp) || ':' || EXTRACT(SECOND FROM timestamp) AS roll_start_time,
+        order_no,
+        roll_name,       -- Added the 'roll_name' column
+        revolution       -- Added the 'revolution' column
     FROM roll_details
-    WHERE DATE(timestamp) = %s::date - interval '1 day'
-)
-
-SELECT
-    roll_number,
-    DATE(timestamp) AS roll_start_date,
-    EXTRACT(HOUR FROM timestamp) || ':' || EXTRACT(MINUTE FROM timestamp) || ':' || EXTRACT(SECOND FROM timestamp) AS roll_start_time,
-    order_no
-FROM roll_details
-WHERE DATE(timestamp) = %s::date OR timestamp = (SELECT last_entry_timestamp FROM LastEntry)
-ORDER BY timestamp ASC;
+    WHERE DATE(timestamp) = %s::date OR timestamp = (SELECT last_entry_timestamp FROM LastEntry)
+    ORDER BY timestamp ASC;
 '''
 
             cursor.execute(query, (current_date, current_date))
             data = cursor.fetchall()
 
             roll_details_cellText = [
-                [str(row[0]), str(row[1]), row[2], 'null' if row[3] is None else str(row[3])]
+                [str(row[0]), str(row[1]), row[2], 'null' if row[3] is None else str(row[3]), str(row[4]), str(row[5])]
                 for row in data
             ]
 
-            roll_details_df = pd.DataFrame(roll_details_cellText, columns=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No'])
+            roll_details_df = pd.DataFrame(roll_details_cellText, columns=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No', 'Roll Name', 'Revolution'])
+
 
             # Calculate Roll End Time based on the next row's Roll Start Time
             roll_details_df['Roll End Time'] = roll_details_df['Roll Start Time'].shift(-1)
@@ -219,6 +224,7 @@ ORDER BY timestamp ASC;
 
             # Add defect_counts as a new column to roll_details_df
             roll_details_df['Defect Counts'] = defect_counts
+            roll_details_df.fillna("running", inplace=True)
             
             fig, ax5 = plt.subplots(figsize=(21, 10))
             ax_logo = fig.add_subplot(1, 1, 1)
@@ -244,7 +250,12 @@ ORDER BY timestamp ASC;
             table_data = roll_details_df.values.tolist()
 
             # Create the table with the formatted data
-            ax5.table(cellText=table_data, colLabels=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No', 'Roll End Time', 'Defect Count'], loc='center', bbox=[0.03, 0.3, 0.9, 0.5], fontsize=25)
+            t = ax5.table(cellText=table_data, colLabels=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No', 'Roll id ','Doff Count','Roll End Time','Defect Count'], loc='center', bbox=[0.0, 0.3, 1, 0.6], fontsize=25)
+
+            for date ,total_count in daily_rotation_counts.items():
+               ax5.text(0.5, 0.1, f"Total Doff Count: {total_count}", fontsize=28, color='black', ha='center', transform=t.get_transform())
+
+            #ax5.text(text_x, text_y, f"Date: {current_date}", fontsize=28, color='black')
             pdf_pages.savefig(fig)
             plt.close(fig)
 
@@ -350,7 +361,7 @@ ORDER BY timestamp ASC;
             return pdf_buffer, True
 
 def generate_pdf_performance(report_date):
-    filename = f"SCM_PERFORMANCE_REPORT_{report_date}.pdf"
+    filename = f"SCM_MACHINE3_PERFORMANCE_REPORT_{report_date}.pdf"
     pdf_buffer, has_data = generate_plots_pdf(report_date, report_date)
     
     if has_data:
