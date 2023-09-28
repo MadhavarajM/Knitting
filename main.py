@@ -4,6 +4,7 @@ import matplotlib
 #matplotlib.use('Agg')
 import numpy as np
 import datetime
+from datetime import timedelta
 from io import BytesIO
 from matplotlib.backends.backend_pdf import PdfPages
 import pandas as pd
@@ -11,6 +12,7 @@ from collections import Counter
 import matplotlib.dates as mdates
 import matplotlib.image as mpimg
 import locale
+
 
 locale.setlocale(locale.LC_TIME, 'C')
 encoding = 'utf-8'
@@ -22,7 +24,7 @@ def round_to_nearest_multiple_of_3(x):
         return 30
 def generate_plots_pdf(start_date, end_date):
     # Connect to the database
-    conn = psycopg2.connect(host="localhost", database="new9", user="postgres", password="manager")
+    conn = psycopg2.connect(host="localhost", database="new10", user="postgres", password="manager")
     cursor = conn.cursor()
     # Convert the date strings to datetime objects
     start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
@@ -167,7 +169,6 @@ def generate_plots_pdf(start_date, end_date):
 
             roll_details_df = pd.DataFrame(roll_details_cellText, columns=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No', 'Roll Name', 'Revolution'])
 
-
             # Calculate Roll End Time based on the next row's Roll Start Time
             roll_details_df['Roll End Time'] = roll_details_df['Roll Start Time'].shift(-1)
 
@@ -179,13 +180,51 @@ def generate_plots_pdf(start_date, end_date):
             # Drop the last row as it doesn't have a corresponding next row
             roll_details_df = roll_details_df.dropna(subset=['Roll Start Time', 'Roll End Time'])
 
-            # Convert 'Roll Start Time' and 'Roll End Time' columns to datetime objects
-            roll_details_df['Roll Start Time'] = pd.to_datetime(roll_details_df['Roll Start Time'], format="%H:%M:%S.%f", errors='coerce', exact=False, infer_datetime_format=True)
-            roll_details_df['Roll End Time'] = pd.to_datetime(roll_details_df['Roll End Time'], format="%H:%M:%S.%f", errors='coerce', exact=False, infer_datetime_format=True)
+            roll_details_df['Roll Start Date'] = pd.to_datetime(roll_details_df['Roll Start Date'])  # Convert 'Roll Start Date' to datetime
+            roll_details_df['Roll End Date'] = roll_details_df['Roll Start Date']  # Initialize 'Roll End Date' to 'Roll Start Date'
 
-            # Format 'Roll Start Time' and 'Roll End Time' columns as strings
+            for index in range(len(roll_details_df) - 1):
+                current_row = roll_details_df.iloc[index]
+                next_row = roll_details_df.iloc[index + 1]
+                
+                # Check if the current roll ends on a different date than it starts
+                if current_row['Roll Start Time'] > next_row['Roll Start Time']:
+                    roll_details_df.at[index, 'Roll End Date'] = current_row['Roll Start Date'] + timedelta(days=1)
+
+            # For the last row, if it's the last entry of the day, set 'Roll End Date' to NaN
+            last_row_index = len(roll_details_df) - 1
+            if last_row_index >= 0:
+                if roll_details_df.iloc[last_row_index]['Roll Start Time'] <= '23:59:59':
+                    roll_details_df.at[last_row_index, 'Roll End Date'] = pd.NaT  # Set to NaN
+
+            # Format 'Roll End Date' as a string, excluding the last row if it's NaN
+            roll_details_df['Roll Start Date'] = roll_details_df['Roll Start Date'].dt.strftime('%Y-%m-%d')
+            roll_details_df['Roll End Date'] = roll_details_df['Roll End Date'].dt.strftime('%Y-%m-%d')
+
+            
+            first_row_index = 0
+            roll_details_df['Roll Start Time'] = pd.to_datetime(roll_details_df['Roll Start Time'], format="%H:%M:%S.%f", errors='coerce', exact=False, infer_datetime_format=True)
+            roll_details_df['Roll End Time'] = pd.to_datetime(roll_details_df['Roll End Time'], format="%H:%M:%S.%f", errors='coerce', exact=False, infer_datetime_format=True) 
             roll_details_df['Roll Start Time'] = roll_details_df['Roll Start Time'].dt.strftime('%H:%M:%S')
             roll_details_df['Roll End Time'] = roll_details_df['Roll End Time'].dt.strftime('%H:%M:%S')
+
+
+            # Calculate and assign 'Time Taken' for the first row
+            start = pd.to_datetime(roll_details_df.at[first_row_index, 'Roll Start Time'])
+            end = pd.to_datetime(roll_details_df.at[first_row_index, 'Roll End Time']) - timedelta(days=1)
+            diff = end - start
+            hours = int(diff.seconds // 3600)
+            minutes = int((diff.seconds // 60) % 60)
+            roll_details_df.at[first_row_index, 'Time Taken'] = f"{hours} hours {minutes} minutes"
+
+
+            # Calculate and assign 'Time Taken' for other rows
+            for row_index in range(1, len(roll_details_df) - 1):
+                time_taken_minutes = (pd.to_datetime(roll_details_df.at[row_index, 'Roll End Time']) - pd.to_datetime(roll_details_df.at[row_index, 'Roll Start Time'])).total_seconds() / 60
+                hours = int(time_taken_minutes // 60)
+                minutes = int(time_taken_minutes % 60)
+                roll_details_df.at[row_index, 'Time Taken'] = f"{hours} hours {minutes} minutes"
+
             defect_counts = []
 
             # Start with the beginning of the day for the first row
@@ -250,7 +289,7 @@ def generate_plots_pdf(start_date, end_date):
             table_data = roll_details_df.values.tolist()
 
             # Create the table with the formatted data
-            t = ax5.table(cellText=table_data, colLabels=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No', 'Roll id ','Doff Count','Roll End Time','Defect Count'], loc='center', bbox=[0.0, 0.3, 1, 0.6], fontsize=25)
+            t = ax5.table(cellText=table_data, colLabels=['Roll Number', 'Roll Start Date', 'Roll Start Time', 'Order No', 'Roll id ','Doff Count','Roll End Time','Roll End Date', 'Time Taken', 'Defect Counts'], loc='center', bbox=[0.0, 0.3, 1, 0.6], fontsize=25)
 
             for date ,total_count in daily_rotation_counts.items():
                ax5.text(0.5, 0.1, f"Total Doff Count: {total_count}", fontsize=28, color='black', ha='center', transform=t.get_transform())
